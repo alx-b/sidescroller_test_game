@@ -9,7 +9,7 @@ class MainWindow(pyglet.window.Window):
         self.width = 240
         self.height = 160
 
-        self.scene = Scene()
+        self.scene = Scene(self.width, self.height)
         self.push_handlers(self.scene.char.key_handler)
 
     def on_key_press(self, symbol, modifiers):

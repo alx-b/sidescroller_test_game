@@ -118,4 +118,8 @@ class EnemyResource:
     tileset = pyglet.resource.image("slime_idle_anim_strip_5.png")
     grid_tileset = pyglet.image.ImageGrid(tileset, 1, 5)
 
+    for img in grid_tileset:
+        img.anchor_x = img.width // 2
+        img.anchor_y = img.height // 2
+
     idle_anim = idle_animation(grid_tileset)

@@ -7,14 +7,23 @@ from enemy import Enemy
 
 
 class Scene:
-    def __init__(self):
-        self.char = Player(112, 80)
-        self.grounds = []
-        self.undergrounds = []
-        self.ground_batch = pyglet.graphics.Batch()
+    def __init__(self, width, height):
+        self.win_width = width
+        self.win_height = height
+
+        self.batch = pyglet.graphics.Batch()
+        self.bg = pyglet.graphics.OrderedGroup(0)
+        self.mid = pyglet.graphics.OrderedGroup(1)
+        self.fg = pyglet.graphics.OrderedGroup(2)
+
+        self.char = Player(112, 80, batch=self.batch, group=self.mid)
+        self.colliders = []
+        self.non_colliders = []
         self.level = self.get_level_layout()
         self.create_batch_sprite_from_level()
-        self.enemy = Enemy(200, 30)
+        self.enemies = []
+        self.enemies.append(Enemy(160, 68, batch=self.batch, group=self.mid))
+        self.enemies.append(Enemy(195, 36, batch=self.batch, group=self.mid))
 
     def get_level_layout(self):
         """ Store the level layout from a file into a list. """
@@ -33,7 +42,7 @@ class Scene:
         return level
 
     def create_batch_sprite_from_level(self):
-        """ Match the layout with its proper tile sprites """
+        """ Match the layout with its proper tile sprite. """
         x = None
         y = None
         for idy, row in enumerate(self.level):
@@ -74,140 +83,55 @@ class Scene:
                         y = 5
 
                     if value == "5":
-                        self.undergrounds.append(
+                        self.non_colliders.append(
                             Ground(
                                 WorldResource.grid_tileset[(x, y)],
                                 idx * WorldResource.grid_tileset[(x, y)].width,
                                 idy * WorldResource.grid_tileset[(x, y)].height,
-                                self.ground_batch,
+                                self.batch,
+                                self.bg,
                             )
                         )
                     else:
-                        self.grounds.append(
+                        self.colliders.append(
                             Ground(
                                 WorldResource.grid_tileset[(x, y)],
                                 idx * WorldResource.grid_tileset[(x, y)].width,
                                 idy * WorldResource.grid_tileset[(x, y)].height,
-                                self.ground_batch,
+                                self.batch,
+                                self.bg,
                             )
                         )
 
     def draw(self):
         WorldResource.background.blit(0, 0)
-        self.ground_batch.draw()
-        self.char.draw()
-        self.enemy.draw()
+        self.batch.draw()
 
     def update(self, dt):
         self.char.update(dt)
 
-        if not self.collision_check() and not self.char.is_jumping:
+        if not self.char.collision_check(self.colliders) and not self.char.is_jumping:
             self.char.velocity = -15
             force = self.char.mass * self.char.velocity
-            self.char.shape_collision.y += force * dt
+            self.char.collision_shape.shape.y += force * dt
             self.char.velocity -= 2
+        if self.char.is_attacking:
+            self.enemies = self.char.attack(self.enemies)
         # camera/scrolling effect
-        if self.char.shape_collision.x > 140:
-            for tile in self.grounds:
+        if self.char.collision_shape.shape.x > (0.5 * self.win_width):
+            for tile in self.colliders:
                 tile.move_left(self.char.speed_right, dt)
-            for tile in self.undergrounds:
+            for tile in self.non_colliders:
                 tile.move_left(self.char.speed_right, dt)
-            self.char.shape_collision.x -= self.char.speed_right * dt
-            self.enemy.sprite.x -= self.char.speed_right * dt
+            self.char.collision_shape.shape.x -= self.char.speed_right * dt
+            for tile in self.enemies:
+                tile.move_left(self.char.speed_right, dt)
 
-        elif self.char.shape_collision.x < 100:
-            for tile in self.grounds:
+        elif self.char.collision_shape.shape.x < (self.win_width / 3):
+            for tile in self.colliders:
                 tile.move_right(self.char.speed_left, dt)
-            for tile in self.undergrounds:
+            for tile in self.non_colliders:
                 tile.move_right(self.char.speed_left, dt)
-            self.char.shape_collision.x += self.char.speed_left * dt
-            self.enemy.sprite.x += self.char.speed_right * dt
-
-    def collision_check(self):
-        counter = 0
-        for ground in self.grounds:
-            # Not sure if that work but only do the collision detection if the
-            # tile is close to the character (200x200)
-            if (
-                ground.sprite.x > self.char.shape_collision.x - 100
-                and ground.sprite.x < self.char.shape_collision.x + 100
-                and ground.sprite.y > self.char.shape_collision.y - 100
-                and ground.sprite.y < self.char.shape_collision.y + 100
-            ):
-                if self.bottom_side_collide_with_object_top_side(ground):
-                    counter += 1
-                    self.char.is_jumping = False
-                    self.char.velocity = 20
-                    self.char.shape_collision.y = (
-                        ground.sprite.y
-                        + ground.sprite.height
-                        + self.char.shape_collision.height // 2
-                    )
-                if self.right_side_collide_with_object_left_side(ground):
-                    self.char.shape_collision.x = (
-                        ground.get_left_side() - self.char.shape_collision.width // 2
-                    )
-                    self.char.speed_right = 0
-                if self.left_side_collide_with_object_right_side(ground):
-                    self.char.shape_collision.x = (
-                        ground.sprite.x
-                        + ground.sprite.width
-                        + self.char.shape_collision.width // 2
-                    )
-                    self.char.speed_left = 0
-                if self.top_side_collide_with_object_bottom_side(ground):
-                    self.char.shape_collision.y = (
-                        ground.get_bottom_side() - self.char.shape_collision.width // 2
-                    )
-                    # Knock back effect from hitting platform's bottom when jumping
-                    self.char.velocity = -20
-                    force = self.char.mass * self.char.velocity
-                    self.char.shape_collision.y += force * 1.0 / 120.0
-                    self.char.velocity -= 2
-
-                self.char.speed_right = 60
-                self.char.speed_left = 60
-        if counter > 0:
-            return True
-        else:
-            return False
-
-    def bottom_side_collide_with_object_top_side(self, object):
-        if (
-            self.char.get_bottom_side() <= object.get_top_side()
-            and self.char.get_bottom_side() > object.get_bottom_side()
-            and self.char.shape_collision.x > object.get_left_side()
-            and self.char.shape_collision.x < object.get_right_side()
-        ):
-            return True
-        return False
-
-    def right_side_collide_with_object_left_side(self, object):
-        if (
-            self.char.get_right_side() >= object.get_left_side()
-            and self.char.get_right_side() < object.get_right_side()
-            and self.char.shape_collision.y < object.get_top_side()
-            and self.char.shape_collision.y > object.get_bottom_side()
-        ):
-            return True
-        return False
-
-    def left_side_collide_with_object_right_side(self, object):
-        if (
-            self.char.get_left_side() <= object.get_right_side()
-            and self.char.get_left_side() > object.get_left_side()
-            and self.char.shape_collision.y < object.get_top_side()
-            and self.char.shape_collision.y > object.get_bottom_side()
-        ):
-            return True
-        return False
-
-    def top_side_collide_with_object_bottom_side(self, object):
-        if (
-            self.char.get_top_side() >= object.get_bottom_side()
-            and self.char.get_top_side() < object.get_top_side()
-            and self.char.shape_collision.x > object.get_left_side()
-            and self.char.shape_collision.x < object.get_right_side()
-        ):
-            return True
-        return False
+            self.char.collision_shape.shape.x += self.char.speed_left * dt
+            for tile in self.enemies:
+                tile.move_right(self.char.speed_left, dt)
